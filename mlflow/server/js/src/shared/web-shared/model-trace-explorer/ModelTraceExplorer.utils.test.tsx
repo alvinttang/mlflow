@@ -484,6 +484,35 @@ describe('normalizeConversation', () => {
     );
     expect(result![2]).toEqual(expect.objectContaining({ role: 'assistant', content: 'Hello from assistant' }));
   });
+
+  it('parses input/output messages encoded as a JSON string (GenAI semconv)', () => {
+    // The GenAI semantic convention allows messages to be encoded as JSON strings
+    // for SDKs (like Java) that don't support structured attributes.
+    const messages = [{ role: 'user', content: 'Hello' }];
+    const jsonString = JSON.stringify(messages);
+
+    const result = normalizeConversation(jsonString);
+    expect(result).toEqual(messages);
+  });
+
+  it('parses OpenAI-format messages encoded as a JSON string', () => {
+    const input = { messages: [{ role: 'user', content: 'Hello' }, { role: 'assistant', content: 'Hi' }] };
+    const jsonString = JSON.stringify(input);
+
+    const result = normalizeConversation(jsonString);
+    expect(result).not.toBeNull();
+    expect(result).toHaveLength(2);
+    expect(result![0]).toEqual(expect.objectContaining({ role: 'user', content: 'Hello' }));
+    expect(result![1]).toEqual(expect.objectContaining({ role: 'assistant', content: 'Hi' }));
+  });
+
+  it('returns null for a plain string that is not valid JSON', () => {
+    expect(normalizeConversation('just a plain string')).toBeNull();
+  });
+
+  it('returns null for a JSON string that does not contain messages', () => {
+    expect(normalizeConversation(JSON.stringify({ key: 'value' }))).toBeNull();
+  });
 });
 
 describe('isModelTraceChatTool', () => {

@@ -1060,6 +1060,20 @@ export const normalizeConversation = (input: any, messageFormat?: string): Model
   // and formatting, and it's possible that we miss some edge cases. in case of an error,
   // simply return null to signify that the input is not a chat input.
   try {
+    // The GenAI semantic convention allows input/output messages to be encoded as JSON strings
+    // (for SDKs like Java that don't support structured attributes). When this happens,
+    // the value is a string containing JSON. Try to parse it and normalize the result.
+    if (isString(input)) {
+      try {
+        const parsed = JSON.parse(input);
+        if (typeof parsed === 'object' && parsed !== null) {
+          return normalizeConversation(parsed, messageFormat);
+        }
+      } catch {
+        // Not a valid JSON string, fall through
+      }
+    }
+
     // if the input is already in the correct format, return it
     if (Array.isArray(input) && input.length > 0 && input.every(isRawModelTraceChatMessage)) {
       return compact(input.map(prettyPrintChatMessage));
