@@ -118,6 +118,44 @@ def test_python_model_save_load(tmp_path, monkeypatch):
     )
 
 
+def test_relative_import_capture(tmp_path, monkeypatch):
+    """Regression test for https://github.com/mlflow/mlflow/issues/14071.
+
+    When a custom Python model depends on a class whose module uses a
+    relative ``from .sibling import X`` to pull in a parent / helper class
+    in the same package, ``infer_code_paths=True`` must capture the
+    sibling module so the model can be reloaded on a fresh process.
+    """
+    monkeypatch.chdir(os.path.dirname(__file__))
+    monkeypatch.syspath_prepend(".")
+
+    from custom_model.relative_import_test.model_with_relative import (
+        ModelWithRelativeImport,
+    )
+
+    pyfunc_model_path = tmp_path / "pyfunc_model"
+
+    mlflow.pyfunc.save_model(
+        path=pyfunc_model_path,
+        python_model=ModelWithRelativeImport(),
+        infer_code_paths=True,
+    )
+
+    # ``base_class.py`` is only reachable via ``from .base_class import BaseClass``
+    # inside ``sub_class.py``. Before the fix it was silently dropped, breaking
+    # downstream model loading.
+    assert _walk_dir(pyfunc_model_path / "code") == {
+        "custom_model/relative_import_test/__init__.py",
+        "custom_model/relative_import_test/base_class.py",
+        "custom_model/relative_import_test/sub_class.py",
+        "custom_model/relative_import_test/model_with_relative.py",
+    }
+
+    loaded_pyfunc_model = mlflow.pyfunc.load_model(model_uri=pyfunc_model_path)
+    result = loaded_pyfunc_model.predict([1, 2, 3])
+    assert result == ["base+sub"] * 3
+
+
 def test_transitive_import_capture(tmp_path, monkeypatch):
     monkeypatch.chdir(os.path.dirname(__file__))
     monkeypatch.syspath_prepend(".")

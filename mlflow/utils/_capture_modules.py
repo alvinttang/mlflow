@@ -58,11 +58,32 @@ class _CaptureImportedModules:
 
             if self.record_full_module:
                 if is_absolute_import:
-                    parent_modules = name.split(".")
+                    parent_modules = name.split(".") if name else []
                 else:
-                    parent_modules = globals["__name__"].split(".")
+                    # For relative imports, resolve the anchor package using the
+                    # caller's globals (PEP 328 semantics). Prefer ``__spec__.parent``
+                    # which is the canonical anchor in Python 3.13+ (``__package__``
+                    # is documented as a deprecated fallback scheduled for removal in
+                    # 3.15). The bare ``__name__`` is only a best-effort last resort
+                    # and is wrong for non-package modules (e.g. yields ``pkg.sub``
+                    # instead of ``pkg`` when resolving ``from .sibling import X``
+                    # inside ``pkg.sub``). See
+                    # https://github.com/mlflow/mlflow/issues/14071.
+                    g = globals or {}
+                    spec = g.get("__spec__")
+                    package = getattr(spec, "parent", None) if spec is not None else None
+                    if package is None:
+                        package = g.get("__package__")
+                    if package is None:
+                        package = g.get("__name__", "")
+                    parent_modules = package.split(".") if package else []
                     if level > 1:
                         parent_modules = parent_modules[: -(level - 1)]
+                    # Include the submodule referenced by ``name`` (e.g.
+                    # ``base_class`` in ``from .base_class import BaseClass``)
+                    # so that it ends up in the captured module set.
+                    if name:
+                        parent_modules = parent_modules + name.split(".")
 
                 if fromlist:
                     for from_name in fromlist:
@@ -76,7 +97,8 @@ class _CaptureImportedModules:
                             self._record_imported_module(".".join(parent_modules))
                 else:
                     full_module_name = ".".join(parent_modules)
-                    self._record_imported_module(full_module_name)
+                    if full_module_name:
+                        self._record_imported_module(full_module_name)
 
             return result
 
